@@ -206,23 +206,23 @@ pub const controller = struct
     pub fn update() void
     {
         state[0] = 0;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_up          ))) << up;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_down        ))) << down;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_left        ))) << left;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_right       ))) << right;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_comma       ))) << a;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_period      ))) << b;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_enter       ))) << select;
-        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_right_shift ))) << start;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.up          ))) << up;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.down        ))) << down;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.left        ))) << left;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.right       ))) << right;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.comma       ))) << a;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.period      ))) << b;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.enter       ))) << select;
+        state[0] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.right_shift ))) << start;
 
         state[1] = 0;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_w ))) << up;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_s ))) << down;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_a ))) << left;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_d ))) << right;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_c ))) << a;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_v ))) << b;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_q ))) << select;
-        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_e ))) << start;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.w ))) << up;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.s ))) << down;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.a ))) << left;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.d ))) << right;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.c ))) << a;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.v ))) << b;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.q ))) << select;
+        state[1] |= @as(u8, @intFromBool(rl.isKeyDown(rl.KeyboardKey.e ))) << start;
     }
 };

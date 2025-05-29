@@ -439,7 +439,7 @@ pub fn ppuRead(addr: u16, readOnly: bool) u8
 		    if (address == 0x0014) address = 0x0004;
 		    if (address == 0x0018) address = 0x0008;
 		    if (address == 0x001C) address = 0x000C;
-            break :blk palletTable[address];
+            break :blk palletTable[address] & (if(maskReg.grayscale) @as(u8, 0x30) else 0x3F);
         },
 
         else => 0,

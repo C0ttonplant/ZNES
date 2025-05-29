@@ -1,11 +1,21 @@
 .{
-    .name = "nes-emu",
-    .version = "0.0.1",
+    .name = .nes_emu,
+    .fingerprint = 0x8de06a5675216c36,
+
+    .version = "0.0.0",
+
     .dependencies = .{
-        .@"raylib-zig" = .{
+        .raylib_zig = .{
             .url = "https://github.com/Not-Nik/raylib-zig/archive/devel.tar.gz",
-            .hash = "1220df9aa89d657f5dca24ab0ac3d187f7a992a4d27461fd9e76e934bf0670ca9a90",
+
+            .hash = "raylib_zig-5.6.0-dev-KE8REHguBQAE0xoNkra7mtEqr8cCZHk7k_03txLZB-cZ",
+
+            .lazy = false,
         },
     },
-    .paths = .{""},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
 }

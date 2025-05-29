@@ -30,7 +30,7 @@ pub fn main() !void
     bus.instertCartrage(&cart);
     defer bus.removeCartrige();
 
-    apu.init();
+    try apu.init();
     defer apu.destroy();
 
     cam.offset = rl.Vector2.init(0, 0);
@@ -59,7 +59,7 @@ pub fn main() !void
         // ppu.drawFrame();
 
         rl.unloadTexture(screenTexture); 
-        screenTexture = rl.loadTextureFromImage(ppu.screenImg);
+        screenTexture = try rl.loadTextureFromImage(ppu.screenImg);
 
         rl.drawTexture(screenTexture, 0, 0, rl.Color.white);
         //----------------------------------------------------------------------------------

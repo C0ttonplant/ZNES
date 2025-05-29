@@ -98,11 +98,11 @@ pub fn getOutputSample() f64
     return pulse1Sample;
 }
 
-pub fn init() void
+pub fn init() !void
 {
     rl.initAudioDevice();
     rl.setAudioStreamBufferSizeDefault(MAX_SAMPLES_PER_UPDATE);
-    stream = rl.loadAudioStream(44100, 16, 1);
+    stream = try rl.loadAudioStream(44100, 16, 1);
 
     rl.setAudioStreamCallback(stream, audioCallback);   
 

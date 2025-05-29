@@ -21,11 +21,6 @@ var dmaDummy: bool = true;
 /// write data onto bus
 pub fn write(addr: u16, dat: u8) void
 {
-
-    // if(addr == 0x02 or addr == 0x03)
-    // {
-    //     std.debug.print("addr: {x} | result: {x}\n", .{addr, dat});
-    // }
     // the cartrige can take any write
     if(cart.cpuWrite(addr, dat))
     {
@@ -132,26 +127,26 @@ pub fn clock() bool
         }
     }
 
-    var audioSampleReady: bool = false;
-    apu_2A02.audioTime += apu_2A02.timePerNesClock;
+    // var audioSampleReady: bool = false;
+    // apu_2A02.audioTime += apu_2A02.timePerNesClock;
 
-    if(apu_2A02.audioTime >= apu_2A02.timePerSystemSample)
-    {
-        apu_2A02.audioTime -= apu_2A02.timePerSystemSample;
-        apu_2A02.audioSample = apu_2A02.getOutputSample();
-        if(apu_2A02.bufferInd < 511)
-        {
-            apu_2A02.audioBuffer[apu_2A02.bufferInd] = apu_2A02.audioSample;
-            apu_2A02.bufferInd += 1;
-        }
-        else apu_2A02.bufferInd = 0;
+    // if(apu_2A02.audioTime >= apu_2A02.timePerSystemSample)
+    // {
+    //     apu_2A02.audioTime -= apu_2A02.timePerSystemSample;
+    //     apu_2A02.audioSample = apu_2A02.getOutputSample();
+    //     if(apu_2A02.bufferInd < 511)
+    //     {
+    //         apu_2A02.audioBuffer[apu_2A02.bufferInd] = apu_2A02.audioSample;
+    //         apu_2A02.bufferInd += 1;
+    //     }
+    //     else apu_2A02.bufferInd = 0;
 
-        audioSampleReady = true;
-    }
+    //     audioSampleReady = true;
+    // }
 
     systemClockCounter += 1;
 
-    return audioSampleReady;
+    return true;
 }
 
 

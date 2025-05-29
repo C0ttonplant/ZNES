@@ -21,7 +21,7 @@ pub fn main() !void
     rl.setConfigFlags(flags);
     rl.initWindow(screenWidth, screenHeight, "nes-emu");
     defer rl.closeWindow(); // Close window and OpenGL context
-    rl.setTargetFPS(120);
+    rl.setTargetFPS(60);
 
     ppu.screenImg = rl.genImageColor(256, 240, rl.Color.black);
     apu.setSampleFrequency(44100);

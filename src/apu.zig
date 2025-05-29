@@ -3,9 +3,10 @@ const rl = @import("raylib");
 const std = @import("std");
 const bus = @import("bus.zig");
 const ppu = @import("ppu.zig");
-var rand = std.rand.Isaac64.init(82907389);
+var rand = std.Random.Isaac64.init(82907389);
 const MAX_SAMPLES: i32            =  512;
 const MAX_SAMPLES_PER_UPDATE: i32 = 4096;
+const SAMPLE_RATE: usize          = 44100;
 
 pub var audioBuffer: [512]f64 = undefined;
 pub var bufferInd: u32 = 0;
@@ -20,10 +21,6 @@ pub var timePerNesClock: f64 = 0;
 pub var audioTime: f64 = 0;
 
 var stream: rl.AudioStream = undefined;
-var index: f32 = 0;
-var freq: f32 = 440.0;
-
-var complete: bool = true;
 
 var frameClockCounter: u32 = 0;
 var clockCounter: u32 = 0;
@@ -51,40 +48,17 @@ const sequencer = packed struct
     }
 };
 
-var average: f64 = 0;
-var average2: f64 = 0;
-var average3: f64 = 0;
-
 pub fn audioCallback(buffer: ?*anyopaque, frames: c_uint) callconv(.C) void
 {
-    _ = buffer; // autofix
-    complete = false;
-    // var bfr: *[512]i16 = @alignCast(@ptrCast(buffer orelse return));
-    // _ = bfr; // autofix
-
-    // var inc: f32 = freq / 44100.0;
-   
-    // freq = rand.random().float(f32) * 40 + 400;
-
+    var bfr: *[MAX_SAMPLES_PER_UPDATE]f32 = @alignCast(@ptrCast(buffer orelse return));   
 
     for (0..frames) |i| 
     {
-        _ = i; // autofix
-        // TODO: find a better way of syncing
-        while (!ppu.drawSynced()) {}
-
-        average += 2000 * audioSample;
-        average /= 2;
-        average2 += average;
-        average2 /= 2;
-        average3 += average2;
-        average3 /= 2;
-        
-        // bfr[i] = @intFromFloat(average3);
-
-        // index = @mod(index + inc, 1.0);
+        // while (!ppu.drawSynced()) {}
+        clock();
+        bfr[i] = @floatCast(getOutputSample());
     }
-    complete = true;
+    ppu.drawFrame();
 }
 
 pub fn setSampleFrequency(sampleRate: u32) void
@@ -95,14 +69,16 @@ pub fn setSampleFrequency(sampleRate: u32) void
 
 pub fn getOutputSample() f64
 {
-    return pulse1Sample;
+    return pulse1Sample * 0.1;
 }
 
 pub fn init() !void
 {
+    setSampleFrequency(SAMPLE_RATE);
+
     rl.initAudioDevice();
     rl.setAudioStreamBufferSizeDefault(MAX_SAMPLES_PER_UPDATE);
-    stream = try rl.loadAudioStream(44100, 16, 1);
+    stream = try rl.loadAudioStream(SAMPLE_RATE, 32, 1);
 
     rl.setAudioStreamCallback(stream, audioCallback);   
 
@@ -112,7 +88,7 @@ pub fn init() !void
 pub fn destroy() void
 {
     // wait for drawSync to finish
-    while(!complete) { std.time.sleep(100_000_000); }
+    // while(!complete) { std.time.sleep(100_000_000); }
     rl.unloadAudioStream(stream);
     rl.closeAudioDevice();
 }
@@ -135,6 +111,8 @@ pub fn clock() void
 
         pulse1Sample = @floatFromInt(pulse1Seq.output);
     }
+
+    clockCounter += 1;
 }
 
 pub fn ror(s: *u32) void

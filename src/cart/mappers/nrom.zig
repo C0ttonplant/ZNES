@@ -5,29 +5,35 @@ const Nrom = @This();
 
 const Rom = @import("../rom.zig");
 
-prg_mask: u16,
-
 pub fn init(rom: *const Rom) Nrom {
-    return .{ .prg_mask = if (rom.prg_banks > 1) 0x7FFF else 0x3FFF };
+    _ = rom;
+    return .{};
 }
 
-pub fn cpuRead(self: *Nrom, rom: *Rom, addr: u16) ?u8 {
-    if (addr < 0x8000) return null;
-    return rom.prg_rom[addr & self.prg_mask];
+pub fn cpuRead(_: *Nrom, rom: *Rom, addr: u16) ?u8 {
+    return switch (addr) {
+        0x6000...0x7FFF => rom.readPrgRam(addr),
+        0x8000...0xFFFF => rom.prg32k(0, addr),
+        else => null,
+    };
 }
 
-pub fn cpuWrite(_: *Nrom, _: *Rom, addr: u16, _: u8) bool {
-    // ROM, writes are ignored
-    return addr >= 0x8000;
+pub fn cpuWrite(_: *Nrom, rom: *Rom, addr: u16, value: u8) bool {
+    return switch (addr) {
+        0x6000...0x7FFF => rom.writePrgRam(addr, value),
+        // ROM, writes are ignored
+        0x8000...0xFFFF => true,
+        else => false,
+    };
 }
 
 pub fn ppuRead(_: *Nrom, rom: *Rom, addr: u16) ?u8 {
     if (addr > 0x1FFF) return null;
-    return rom.chr[addr];
+    return rom.chr[rom.chrOffset(0, 0x2000, addr)];
 }
 
 pub fn ppuWrite(_: *Nrom, rom: *Rom, addr: u16, value: u8) bool {
     if (addr > 0x1FFF) return false;
-    if (rom.chrIsRam()) rom.chr[addr] = value;
+    if (rom.chr_is_ram) rom.chr[rom.chrOffset(0, 0x2000, addr)] = value;
     return true;
 }

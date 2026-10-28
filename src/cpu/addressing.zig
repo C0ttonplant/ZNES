@@ -1,117 +1,99 @@
-//! 6502 addressing modes. Each one reads its operand bytes, leaves the
-//! effective address in `cpu.addr_abs` (or `cpu.addr_rel` for branches) and
-//! returns 1 if the instruction may take an extra cycle for crossing a page.
+//! 6502 addressing modes. Each one reads its operand bytes and leaves the
+//! effective address in `cpu.addr_abs` (or `cpu.addr_rel` for branches).
+//! Every bus access is a CPU cycle, including the dummy reads the real chip
+//! does while it works the address out.
 
 const Cpu = @import("cpu.zig");
 
-/// implied / accumulator
-pub fn IMP(cpu: *Cpu) u8 {
+/// implied / accumulator, the CPU reads the next byte and throws it away
+pub fn IMP(cpu: *Cpu) void {
+    cpu.dummyRead(cpu.pc);
     cpu.fetched = cpu.a;
-    return 0;
 }
 /// immediate
-pub fn IMM(cpu: *Cpu) u8 {
+pub fn IMM(cpu: *Cpu) void {
     cpu.addr_abs = cpu.pc;
     cpu.pc +%= 1;
-    return 0;
 }
 /// zero page
-pub fn ZP0(cpu: *Cpu) u8 {
-    cpu.addr_abs = cpu.read(cpu.pc);
-    cpu.pc +%= 1;
-    return 0;
+pub fn ZP0(cpu: *Cpu) void {
+    cpu.addr_abs = cpu.fetchOperand();
 }
 /// zero page, x
-pub fn ZPX(cpu: *Cpu) u8 {
-    cpu.addr_abs = cpu.read(cpu.pc) +% cpu.x;
-    cpu.pc +%= 1;
-    return 0;
+pub fn ZPX(cpu: *Cpu) void {
+    const base = cpu.fetchOperand();
+    // reads the unindexed address while adding
+    cpu.dummyRead(base);
+    cpu.addr_abs = base +% cpu.x;
 }
 /// zero page, y
-pub fn ZPY(cpu: *Cpu) u8 {
-    cpu.addr_abs = cpu.read(cpu.pc) +% cpu.y;
-    cpu.pc +%= 1;
-    return 0;
+pub fn ZPY(cpu: *Cpu) void {
+    const base = cpu.fetchOperand();
+    cpu.dummyRead(base);
+    cpu.addr_abs = base +% cpu.y;
 }
 /// absolute
-pub fn ABS(cpu: *Cpu) u8 {
-    cpu.addr_abs = cpu.readU16(cpu.pc);
-    cpu.pc +%= 2;
-    return 0;
+pub fn ABS(cpu: *Cpu) void {
+    cpu.addr_abs = cpu.fetchOperandU16();
 }
 /// absolute, x
-pub fn ABX(cpu: *Cpu) u8 {
-    const base = cpu.readU16(cpu.pc);
-    cpu.pc +%= 2;
-
+pub fn ABX(cpu: *Cpu) void {
+    const base = cpu.fetchOperandU16();
     cpu.addr_abs = base +% cpu.x;
-    return indexedDummyRead(cpu, base);
+    indexedDummyRead(cpu, base);
 }
 /// absolute, y
-pub fn ABY(cpu: *Cpu) u8 {
-    const base = cpu.readU16(cpu.pc);
-    cpu.pc +%= 2;
-
+pub fn ABY(cpu: *Cpu) void {
+    const base = cpu.fetchOperandU16();
     cpu.addr_abs = base +% cpu.y;
-    return indexedDummyRead(cpu, base);
+    indexedDummyRead(cpu, base);
 }
-/// indirect
-pub fn IND(cpu: *Cpu) u8 {
-    const ptr = cpu.readU16(cpu.pc);
-    cpu.pc +%= 2;
+/// indirect (JMP only)
+pub fn IND(cpu: *Cpu) void {
+    const ptr = cpu.fetchOperandU16();
 
-    // simulate 6502 hardware bug, the pointer's high byte doesn't carry into the next page
-    if (ptr & 0xff == 0xff) {
-        cpu.addr_abs = (@as(u16, cpu.read(ptr & 0xff00)) << 8) | cpu.read(ptr);
-        return 0;
-    }
-
-    cpu.addr_abs = cpu.readU16(ptr);
-    return 0;
+    // 6502 bug: the pointer's high byte doesn't carry into the next page
+    const lo: u16 = cpu.read(ptr);
+    const hi: u16 = cpu.read((ptr & 0xff00) | ((ptr +% 1) & 0x00ff));
+    cpu.addr_abs = hi << 8 | lo;
 }
 /// (indirect, x)
-pub fn IZX(cpu: *Cpu) u8 {
-    const t: u8 = cpu.read(cpu.pc);
-    cpu.pc +%= 1;
+pub fn IZX(cpu: *Cpu) void {
+    const ptr = cpu.fetchOperand();
+    cpu.dummyRead(ptr);
 
-    const lo: u16 = cpu.read((t +% cpu.x) & 0x00ff);
-    const hi: u16 = cpu.read((t +% cpu.x +% 1) & 0x00ff);
-
-    cpu.addr_abs = (hi << 8) | lo;
-    return 0;
+    const lo: u16 = cpu.read(ptr +% cpu.x);
+    const hi: u16 = cpu.read(ptr +% cpu.x +% 1);
+    cpu.addr_abs = hi << 8 | lo;
 }
 /// (indirect), y
-pub fn IZY(cpu: *Cpu) u8 {
-    const t: u8 = cpu.read(cpu.pc);
-    cpu.pc +%= 1;
+pub fn IZY(cpu: *Cpu) void {
+    const ptr = cpu.fetchOperand();
 
-    const lo: u16 = cpu.read(t);
-    const hi: u16 = cpu.read(t +% 1);
+    const lo: u16 = cpu.read(ptr);
+    const hi: u16 = cpu.read(ptr +% 1);
+    const base = hi << 8 | lo;
 
-    cpu.addr_abs = ((hi << 8) | lo) +% cpu.y;
-    return indexedDummyRead(cpu, hi << 8);
+    cpu.addr_abs = base +% cpu.y;
+    indexedDummyRead(cpu, base);
 }
-/// relative
-pub fn REL(cpu: *Cpu) u8 {
-    cpu.addr_rel = cpu.read(cpu.pc);
-    cpu.pc +%= 1;
+/// relative (branches)
+pub fn REL(cpu: *Cpu) void {
+    cpu.addr_rel = cpu.fetchOperand();
 
     // sign extend
     if (cpu.addr_rel & 0x80 != 0) {
         cpu.addr_rel |= 0xff00;
     }
-    return 0;
 }
 
-/// indexed addressing does a dummy read before the high byte is fixed,
-/// returns 1 if the index crossed a page
-fn indexedDummyRead(cpu: *Cpu, base: u16) u8 {
+/// indexed addressing reads the address before the high byte is fixed.
+/// Reads only need that extra cycle when the index crossed a page, stores
+/// and read-modify-write instructions always take it.
+fn indexedDummyRead(cpu: *Cpu, base: u16) void {
     const page_crossed = cpu.addr_abs & 0xff00 != base & 0xff00;
 
-    // stores and read-modify-write instructions always do this read
     if (page_crossed or cpu.instruction().op.writesMemory()) {
-        _ = cpu.read((base & 0xff00) | (cpu.addr_abs & 0x00ff));
+        cpu.dummyRead((base & 0xff00) | (cpu.addr_abs & 0x00ff));
     }
-
-    return @intFromBool(page_crossed);
 }

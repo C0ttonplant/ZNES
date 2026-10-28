@@ -30,11 +30,11 @@ pub fn fetch(self: *Background, ppu: *Ppu, step: u3) void {
             self.next_tile_id = ppu.read(0x2000 | (@as(u16, @bitCast(v)) & 0x0FFF));
         },
         2 => {
-            // BUG: `(v.coarse_y >> 2) << 3` is a u5 and truncates, see BUGS.md
+            // one attribute byte per 4x4 tile block
             self.next_tile_attrib = ppu.read(0x23C0 |
                 (@as(u16, @intFromBool(v.nametable_y)) << 11) |
                 (@as(u16, @intFromBool(v.nametable_x)) << 10) |
-                ((v.coarse_y >> 2) << 3) |
+                (@as(u16, v.coarse_y >> 2) << 3) |
                 (v.coarse_x >> 2));
 
             if (v.coarse_y & 2 != 0) self.next_tile_attrib >>= 4;

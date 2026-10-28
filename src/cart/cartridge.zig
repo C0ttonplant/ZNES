@@ -47,6 +47,10 @@ pub fn mirroring(self: *Cartridge) Rom.Mirroring {
     return self.mapper.mirroring(&self.rom);
 }
 
+pub fn irq(self: *const Cartridge) bool {
+    return self.mapper.irq();
+}
+
 pub fn scanline(self: *Cartridge) void {
     self.mapper.scanline();
 }

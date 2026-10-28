@@ -17,19 +17,31 @@
 //! Optional functions (left out = default behaviour):
 //!   mirroring(self: *T, rom: *const Rom) Rom.Mirroring   default: header mirroring
 //!   scanline(self: *T) void                              default: nothing
+//!   irq(self: *const T) bool                             default: false
 
 const std = @import("std");
 const Rom = @import("rom.zig");
 
 pub const Mapper = union(enum) {
     nrom: @import("mappers/nrom.zig"),
+    mmc1: @import("mappers/mmc1.zig"),
+    uxrom: @import("mappers/uxrom.zig"),
+    cnrom: @import("mappers/cnrom.zig"),
+    axrom: @import("mappers/axrom.zig"),
 
     pub const Error = error{UnsupportedMapper};
 
     pub fn init(rom: *const Rom) Error!Mapper {
         return switch (rom.mapper_id) {
             0 => .{ .nrom = .init(rom) },
-            else => error.UnsupportedMapper,
+            1 => .{ .mmc1 = .init(rom) },
+            2 => .{ .uxrom = .init(rom) },
+            3 => .{ .cnrom = .init(rom) },
+            7 => .{ .axrom = .init(rom) },
+            else => {
+                std.log.err("unsupported mapper {d}", .{rom.mapper_id});
+                return error.UnsupportedMapper;
+            },
         };
     }
 
@@ -62,6 +74,16 @@ pub const Mapper = union(enum) {
             inline else => |*m| {
                 if (@hasDecl(@TypeOf(m.*), "mirroring")) return m.mirroring(rom);
                 return rom.mirroring;
+            },
+        }
+    }
+
+    /// level of the cartridge's IRQ output
+    pub fn irq(self: *const Mapper) bool {
+        switch (self.*) {
+            inline else => |*m| {
+                if (@hasDecl(@TypeOf(m.*), "irq")) return m.irq();
+                return false;
             },
         }
     }

@@ -1,17 +1,23 @@
 //! Ricoh 2A03 CPU core (a 6502 without decimal mode).
 //!
-//! Every instruction executes in full on its first cycle, the remaining
-//! cycles are then spent idling so the overall timing lines up.
+//! Every bus access is one CPU cycle: `read` and `write` go through the
+//! console, which runs the PPU and APU for that cycle before the access
+//! happens. Instructions are written as their real sequence of accesses
+//! (dummy reads included), so the cycle timing falls out of that.
+//!
+//! Interrupts are polled once per cycle and the poll from the second to last
+//! cycle of an instruction decides whether an interrupt is taken after it,
+//! same as the real chip.
 
 const Cpu = @This();
 
 const std = @import("std");
-const Bus = @import("../bus.zig");
+const Nes = @import("../nes.zig");
 const opcodes = @import("opcodes.zig");
 const addressing = @import("addressing.zig");
 const instructions = @import("instructions.zig");
 
-bus: *Bus,
+nes: *Nes,
 
 // registers
 a: u8 = 0,
@@ -30,18 +36,24 @@ addr_rel: u16 = 0,
 opcode: u8 = 0,
 /// last fetched data
 fetched: u8 = 0,
-/// cycles remaining for the current instruction
-cycles: u8 = 0,
 /// total cycles executed
 clock_count: u64 = 0,
 /// set by a JAM opcode, the cpu stops executing
 jammed: bool = false,
 
+// interrupts
+/// an NMI edge was seen, cleared when the NMI is taken
+nmi_pending: bool = false,
+/// level of the IRQ line (any source asserting it), set by `Nes` every cycle
+irq_line: bool = false,
+/// interrupt wanted as of the end of the last cycle
+interrupt_wanted: bool = false,
+/// `interrupt_wanted` one cycle earlier, what the CPU acts on after an instruction
+interrupt_poll: bool = false,
+
 // debugging
 /// print a trace line for every instruction
 debug: bool = false,
-/// make `clock` return false when a BRK executes
-exit_on_break: bool = false,
 
 pub const Status = packed struct(u8) {
     /// carry
@@ -62,79 +74,89 @@ pub const Status = packed struct(u8) {
     N: bool = false,
 };
 
-pub fn init(bus: *Bus) Cpu {
-    return .{ .bus = bus };
+pub fn init(nes: *Nes) Cpu {
+    return .{ .nes = nes };
 }
 
-/// iterate the cpu for one cycle
-pub fn clock(self: *Cpu) bool {
-    if (self.jammed) return true;
-
-    if (self.cycles == 0) {
-        self.opcode = self.read(self.pc);
-        const instr = self.instruction();
-
-        if (self.debug) self.printTrace();
-
-        self.pc +%= 1;
-        self.cycles = instr.cycles;
-
-        const extra_cycle_mode: u8 = switch (instr.mode) {
-            inline else => |mode| @field(addressing, @tagName(mode))(self),
-        };
-        const extra_cycle_op: u8 = switch (instr.op) {
-            inline else => |op| @field(instructions, @tagName(op))(self),
-        };
-
-        if (self.exit_on_break and instr.op == .BRK) {
-            return false;
-        }
-        self.cycles += extra_cycle_mode & extra_cycle_op;
+/// run one instruction, then an interrupt if one was polled
+pub fn step(self: *Cpu) void {
+    if (self.jammed) {
+        // the bus keeps reading, time keeps passing
+        self.dummyRead(0xFFFF);
+        return;
     }
 
-    self.clock_count += 1;
-    self.cycles -= 1;
-    return true;
+    self.execute();
+
+    if (self.interrupt_poll) {
+        // the opcode fetch happens but is thrown away
+        self.dummyRead(self.pc);
+        self.dummyRead(self.pc);
+        self.interruptSequence(false);
+    }
 }
 
-/// reset cpu (does not clear memory)
+fn execute(self: *Cpu) void {
+    self.opcode = self.read(self.pc);
+    const instr = self.instruction();
+    if (self.debug) self.printTrace();
+    self.pc +%= 1;
+
+    // JSR reads its operand in its own order
+    if (instr.op != .JSR) switch (instr.mode) {
+        inline else => |mode| @field(addressing, @tagName(mode))(self),
+    };
+    switch (instr.op) {
+        inline else => |op| @field(instructions, @tagName(op))(self),
+    }
+}
+
+/// reset (also used for power on): an interrupt sequence whose pushes are
+/// turned into reads, so SP drops by 3 and nothing is written.
+/// Registers and memory are kept.
 pub fn reset(self: *Cpu) void {
-    self.pc = self.readU16(0xFFFC);
+    self.jammed = false;
+    self.nmi_pending = false;
+    self.interrupt_wanted = false;
+    self.interrupt_poll = false;
 
-    self.a = 0;
-    self.x = 0;
-    self.y = 0;
-    self.sp = 0xFF;
-    self.status = .{ .U = true };
-
-    self.addr_abs = 0;
-    self.addr_rel = 0;
-    self.fetched = 0;
-
-    self.cycles = 8;
+    self.dummyRead(self.pc);
+    self.dummyRead(self.pc);
+    for (0..3) |_| {
+        self.dummyRead(0x0100 + @as(u16, self.sp));
+        self.sp -%= 1;
+    }
+    self.status.I = true;
+    self.status.U = true;
+    self.pc = self.readVector(0xFFFC);
 }
 
-/// interrupt request
-pub fn irq(self: *Cpu) void {
-    if (self.status.I) return;
-    self.interrupt(0xFFFE);
-}
-
-/// non maskable interrupt
-pub fn nmi(self: *Cpu) void {
-    self.interrupt(0xFFFA);
-}
-
-fn interrupt(self: *Cpu, vector: u16) void {
+/// push PC and P, then jump through the NMI / IRQ / BRK vector.
+/// An NMI that arrives before P is pushed takes over the vector, even
+/// during BRK or an IRQ ("hijacking").
+pub fn interruptSequence(self: *Cpu, brk: bool) void {
     self.pushU16(self.pc);
 
-    self.status.B = false;
-    self.status.U = true;
-    self.push(@bitCast(self.status));
+    const vector: u16 = if (self.nmi_pending) 0xFFFA else 0xFFFE;
+    if (self.nmi_pending) self.nmi_pending = false;
+
+    var pushed = self.status;
+    pushed.B = brk;
+    pushed.U = true;
+    self.push(@bitCast(pushed));
     self.status.I = true;
 
-    self.pc = self.readU16(vector);
-    self.cycles = 7;
+    self.pc = self.readVector(vector);
+    // the handler's first instruction always runs
+    self.interrupt_poll = false;
+}
+
+/// called by `Nes` at the end of every cycle, `nmi_edge` is a new NMI
+pub fn pollInterrupts(self: *Cpu, nmi_edge: bool) void {
+    if (nmi_edge) self.nmi_pending = true;
+
+    self.interrupt_poll = self.interrupt_wanted;
+    self.interrupt_wanted = self.nmi_pending or (self.irq_line and !self.status.I);
 }
 
 /// the instruction table entry for the current opcode
@@ -147,17 +169,38 @@ pub fn fetch(self: *Cpu) void {
     if (self.instruction().mode != .IMP) self.fetched = self.read(self.addr_abs);
 }
 
-pub fn read(self: *Cpu, addr: u16) u8 {
-    return self.bus.read(addr);
+/// next byte of the instruction
+pub fn fetchOperand(self: *Cpu) u8 {
+    const value = self.read(self.pc);
+    self.pc +%= 1;
+    return value;
 }
 
-pub fn readU16(self: *Cpu, addr: u16) u16 {
-    const hi: u16 = self.read(addr +% 1);
-    return hi << 8 | self.read(addr);
+/// next two bytes of the instruction, low byte first
+pub fn fetchOperandU16(self: *Cpu) u16 {
+    const lo: u16 = self.fetchOperand();
+    const hi: u16 = self.fetchOperand();
+    return hi << 8 | lo;
+}
+
+pub fn read(self: *Cpu, addr: u16) u8 {
+    return self.nes.cpuRead(addr);
+}
+
+/// a read the CPU does only for timing, the value is ignored (side effects
+/// like clearing $2002 flags still happen)
+pub fn dummyRead(self: *Cpu, addr: u16) void {
+    _ = self.read(addr);
 }
 
 pub fn write(self: *Cpu, addr: u16, value: u8) void {
-    self.bus.write(addr, value);
+    self.nes.cpuWrite(addr, value);
+}
+
+fn readVector(self: *Cpu, addr: u16) u16 {
+    const lo: u16 = self.read(addr);
+    const hi: u16 = self.read(addr +% 1);
+    return hi << 8 | lo;
 }
 
 pub fn push(self: *Cpu, value: u8) void {

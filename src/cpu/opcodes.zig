@@ -1,5 +1,6 @@
-//! The 6502 opcode table: which operation, addressing mode and base cycle
-//! count every one of the 256 opcodes uses.
+//! The 6502 opcode table: which operation and addressing mode every one of
+//! the 256 opcodes uses. The cycle counts are for reference (traces, tests),
+//! the CPU's timing comes from its bus accesses.
 //!
 //! `Op` and `Mode` tag names must match the function names in
 //! `instructions.zig` and `addressing.zig`, `Cpu.execute` dispatches on them.

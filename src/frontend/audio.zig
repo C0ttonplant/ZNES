@@ -1,27 +1,27 @@
-//! raylib audio output. Not hooked up yet, see the audio entry in BUGS.md:
-//! the callback runs on raylib's audio thread, so driving the emulator from
-//! here races with the main loop.
+//! raylib audio output.
+//!
+//! The emulator runs on the main thread and the APU queues finished samples
+//! in a ring buffer. `update` is called once per frame and hands raylib a
+//! new chunk whenever one of its stream buffers is free, so nothing is
+//! shared with raylib's audio thread.
 
-const std = @import("std");
 const rl = @import("raylib");
-const Nes = @import("../nes.zig");
 const Apu = @import("../apu/apu.zig");
 
-const max_samples_per_update = 4096;
+/// samples per raylib buffer, ~23 ms at 44.1 kHz (raylib double buffers)
+const chunk_size = 1024;
+/// if the APU gets this far ahead (the window was dragged, a debugger
+/// paused us...), throw the backlog away instead of lagging behind forever
+const max_queued = chunk_size * 4;
 
 var stream: rl.AudioStream = undefined;
-/// raylib's callback has no user data pointer
-var nes: *Nes = undefined;
+var chunk: [chunk_size]f32 = @splat(0);
 
-pub fn init(console: *Nes) !void {
-    nes = console;
-    nes.apu.setSampleRate(Apu.default_sample_rate);
-
+pub fn init(apu: *Apu) !void {
     rl.initAudioDevice();
-    rl.setAudioStreamBufferSizeDefault(max_samples_per_update);
+    rl.setAudioStreamBufferSizeDefault(chunk_size);
     stream = try rl.loadAudioStream(Apu.default_sample_rate, 32, 1);
-
-    rl.setAudioStreamCallback(stream, audioCallback);
+    apu.setSampleRate(Apu.default_sample_rate);
     rl.playAudioStream(stream);
 }
 
@@ -30,11 +30,17 @@ pub fn deinit() void {
     rl.closeAudioDevice();
 }
 
-fn audioCallback(buffer: ?*anyopaque, frames: c_uint) callconv(.c) void {
-    const out: [*]f32 = @ptrCast(@alignCast(buffer orelse return));
+pub fn update(apu: *Apu) void {
+    while (apu.samplesQueued() > max_queued) {
+        var discard: [chunk_size]f32 = undefined;
+        _ = apu.takeSamples(&discard);
+    }
 
-    for (0..frames) |i| {
-        while (!nes.clock()) {}
-        out[i] = @floatCast(nes.apu.sample);
+    while (rl.isAudioStreamProcessed(stream)) {
+        const n = apu.takeSamples(&chunk);
+        // not enough yet, hold the last level instead of clicking to 0
+        const fill = if (n > 0) chunk[n - 1] else 0;
+        @memset(chunk[n..], fill);
+        rl.updateAudioStream(stream, &chunk, chunk_size);
     }
 }

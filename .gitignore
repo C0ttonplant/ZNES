@@ -1,3 +1,6 @@
+.git
 .zig-cache
 .vscode
-smb.nes
+zig-out
+zig-pkg
+*.nes

@@ -16,21 +16,40 @@ const max_queued = chunk_size * 4;
 
 var stream: rl.AudioStream = undefined;
 var chunk: [chunk_size]f32 = @splat(0);
+/// false when there's no audio device, everything here is a no-op then
+var ready = false;
 
-pub fn init(apu: *Apu) !void {
+pub fn init() !void {
     rl.initAudioDevice();
+    if (!rl.isAudioDeviceReady()) return error.NoAudioDevice;
     rl.setAudioStreamBufferSizeDefault(chunk_size);
     stream = try rl.loadAudioStream(Apu.default_sample_rate, 32, 1);
-    apu.setSampleRate(Apu.default_sample_rate);
     rl.playAudioStream(stream);
+    ready = true;
 }
 
 pub fn deinit() void {
-    rl.unloadAudioStream(stream);
+    if (ready) rl.unloadAudioStream(stream);
     rl.closeAudioDevice();
+    ready = false;
 }
 
-pub fn update(apu: *Apu) void {
+/// 0.0 - 1.0
+pub fn setVolume(volume: f32) void {
+    if (ready) rl.setAudioStreamVolume(stream, volume);
+}
+
+/// feed raylib from the APU's queue, `apu` null plays silence
+pub fn update(maybe_apu: ?*Apu) void {
+    if (!ready) return;
+    const apu = maybe_apu orelse {
+        while (rl.isAudioStreamProcessed(stream)) {
+            @memset(&chunk, 0);
+            rl.updateAudioStream(stream, &chunk, chunk_size);
+        }
+        return;
+    };
+
     while (apu.samplesQueued() > max_queued) {
         var discard: [chunk_size]f32 = undefined;
         _ = apu.takeSamples(&discard);

@@ -40,12 +40,8 @@ pub fn parse(gpa: std.mem.Allocator, data: []const u8) Error!Rom {
     if (!std.mem.eql(u8, &header.magic, "NES\x1A")) return error.InvalidRom;
 
     const is_nes2 = header.flags7 & 0x0C == 0x08;
-    // old dumping tools wrote junk like "DiskDude!" into bytes 7-15, the
-    // upper mapper nibble can't be trusted then
-    const has_junk = !is_nes2 and !std.mem.allEqual(u8, data[12..16], 0);
-
-    var mapper_id: u16 = header.flags6 >> 4;
-    if (!has_junk) mapper_id |= header.flags7 & 0xF0;
+    const has_junk = hasJunk(data);
+    const mapper_id = mapperIdFromHeader(data).?;
     var submapper: u4 = 0;
 
     var prg_size: usize = @as(usize, header.prg_size) * 0x4000;
@@ -55,7 +51,6 @@ pub fn parse(gpa: std.mem.Allocator, data: []const u8) Error!Rom {
     var region: Rom.Region = .ntsc;
 
     if (is_nes2) {
-        mapper_id |= @as(u16, header.mapper_msb & 0x0F) << 8;
         submapper = @truncate(header.mapper_msb >> 4);
 
         // a 0xF nibble means the exponent-multiplier size notation, which
@@ -108,6 +103,25 @@ pub fn parse(gpa: std.mem.Allocator, data: []const u8) Error!Rom {
         .battery = header.flags6 & 0x02 != 0,
         .region = region,
     };
+}
+
+/// the mapper number of an iNES file, null if it isn't one (for error messages)
+pub fn mapperIdFromHeader(data: []const u8) ?u16 {
+    if (data.len < @sizeOf(Header)) return null;
+    const header: *align(1) const Header = @ptrCast(data[0..@sizeOf(Header)]);
+    if (!std.mem.eql(u8, &header.magic, "NES\x1A")) return null;
+
+    var mapper_id: u16 = header.flags6 >> 4;
+    if (!hasJunk(data)) mapper_id |= header.flags7 & 0xF0;
+    if (header.flags7 & 0x0C == 0x08) mapper_id |= @as(u16, header.mapper_msb & 0x0F) << 8;
+    return mapper_id;
+}
+
+/// old dumping tools wrote junk like "DiskDude!" into bytes 7-15 of iNES
+/// headers, the upper mapper nibble can't be trusted then
+fn hasJunk(data: []const u8) bool {
+    const is_nes2 = data[7] & 0x0C == 0x08;
+    return !is_nes2 and !std.mem.allEqual(u8, data[12..16], 0);
 }
 
 /// NES 2.0 RAM sizes are stored as a shift count, 0 means none
